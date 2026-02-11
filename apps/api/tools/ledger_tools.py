@@ -53,6 +53,24 @@ def list_entries(
         return [dict(row) for row in rows]
 
 
+def sum_entries(
+    db_path: Optional[str],
+    entry_date: Optional[str] = None,
+) -> int:
+    with closing(get_connection(db_path)) as connection:
+        init_db(connection)
+        if entry_date:
+            row = connection.execute(
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM ledger WHERE date = ?",
+                (entry_date,),
+            ).fetchone()
+        else:
+            row = connection.execute(
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM ledger",
+            ).fetchone()
+        return int(row["total"]) if row and row["total"] is not None else 0
+
+
 def get_entry_by_id(db_path: Optional[str], entry_id: int) -> Optional[dict]:
     with closing(get_connection(db_path)) as connection:
         init_db(connection)

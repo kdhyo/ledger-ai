@@ -16,6 +16,7 @@ from .tools.ledger_tools import (
     get_last_entry,
     insert_entry,
     list_entries,
+    sum_entries,
     today_iso,
     update_entry_amount,
 )
@@ -117,6 +118,18 @@ def normalize_relative_date(text: Optional[str]) -> Optional[str]:
         except ValueError:
             return None
 
+    # "YY년 M월 D일" or "YYYY년 M월 D일"
+    m = re.fullmatch(r"(\d{2,4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일", value)
+    if m:
+        year_raw = int(m.group(1))
+        year = 2000 + year_raw if year_raw < 100 else year_raw
+        month = int(m.group(2))
+        day = int(m.group(3))
+        try:
+            return date_module(year, month, day).isoformat()
+        except ValueError:
+            return None
+
     return None
 
 
@@ -159,7 +172,9 @@ def minimal_fallback_intent(message: str) -> Intent:
     msg_l = msg.lower()
 
     intent = "unknown"
-    if "삭제" in msg or "delete" in msg_l:
+    if "총합" in msg or "합계" in msg or "sum" in msg_l or "total" in msg_l:
+        intent = "sum"
+    elif "삭제" in msg or "delete" in msg_l:
         intent = "delete"
     elif "수정" in msg or "바꿔" in msg or "change" in msg_l or "update" in msg_l:
         intent = "update"
@@ -173,10 +188,23 @@ def minimal_fallback_intent(message: str) -> Intent:
         target = "last"
 
     entry_date = None
-    if "오늘" in msg or "today" in msg_l:
-        entry_date = today_iso()
-    elif "어제" in msg or "yesterday" in msg_l:
-        entry_date = (date_module.today() - timedelta(days=1)).isoformat()
+    date_patterns = [
+        r"\d{4}-\d{1,2}-\d{1,2}",
+        r"\d{2,4}\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일",
+        r"\d{1,2}\s*월\s*\d{1,2}\s*일",
+        r"\d+\s*일\s*전",
+        r"\d+\s*days?\s*ago",
+    ]
+    for pat in date_patterns:
+        m_date = re.search(pat, msg, re.I)
+        if m_date:
+            entry_date = normalize_relative_date(m_date.group(0))
+            break
+    if entry_date is None:
+        if "오늘" in msg or "today" in msg_l:
+            entry_date = today_iso()
+        elif "어제" in msg or "yesterday" in msg_l:
+            entry_date = (date_module.today() - timedelta(days=1)).isoformat()
 
     amount = None
     m = re.search(r"([\d,]+)\s*원", msg)
@@ -204,7 +232,7 @@ def extract_intent(message: str, llm: OllamaLLM | FakeLLM, prompt: str) -> Inten
         return minimal_fallback_intent(message)
 
     intent = str(data.get("intent", "unknown")).strip().lower()
-    if intent not in {"insert", "select", "update", "delete", "unknown"}:
+    if intent not in {"insert", "select", "update", "delete", "sum", "unknown"}:
         intent = "unknown"
     if intent == "unknown":
         fallback = minimal_fallback_intent(message)
@@ -379,6 +407,11 @@ def build_graph(db_path: Optional[str], llm: OllamaLLM | FakeLLM, prompt: str):
             entry_date = intent.date or today_iso()
             entries = list_entries(db_path, entry_date=entry_date, limit=10)
             return {"reply": format_entries(entries), **cleanup}
+
+        if intent.intent == "sum":
+            entry_date = intent.date or today_iso()
+            total = sum_entries(db_path, entry_date=entry_date)
+            return {"reply": f"{entry_date} 총합은 {total}원이에요.", **cleanup}
 
         if intent.intent == "update":
             if intent.amount is None:

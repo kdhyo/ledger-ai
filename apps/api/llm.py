@@ -13,7 +13,7 @@ LEDGER_INTENT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "intent": {"type": "string", "enum": ["insert", "select", "update", "delete", "unknown"]},
+        "intent": {"type": "string", "enum": ["insert", "select", "update", "delete", "sum", "unknown"]},
         "date": {"type": ["string", "null"], "description": "ISO date YYYY-MM-DD"},
         "item": {"type": ["string", "null"]},
         "amount": {"type": ["integer", "null"]},
@@ -77,7 +77,9 @@ class FakeLLM:
         msg_l = msg.lower()
 
         intent = "unknown"
-        if "삭제" in msg or "지워" in msg or "delete" in msg_l:
+        if "총합" in msg or "합계" in msg or "sum" in msg_l or "total" in msg_l:
+            intent = "sum"
+        elif "삭제" in msg or "지워" in msg or "delete" in msg_l:
             intent = "delete"
         elif "수정" in msg or "바꿔" in msg or "change" in msg_l or "update" in msg_l:
             intent = "update"
@@ -97,6 +99,23 @@ class FakeLLM:
             entry_date = (date_module.today() - timedelta(days=1)).isoformat()
         elif "그제" in msg or "엊그제" in msg or "2 days ago" in msg_l:
             entry_date = (date_module.today() - timedelta(days=2)).isoformat()
+        else:
+            m = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", msg)
+            if m:
+                y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                try:
+                    entry_date = date_module(y, mo, d).isoformat()
+                except ValueError:
+                    entry_date = None
+            if entry_date is None:
+                m = re.search(r"\b(\d{2,4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\b", msg)
+                if m:
+                    y_raw, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                    y = 2000 + y_raw if y_raw < 100 else y_raw
+                    try:
+                        entry_date = date_module(y, mo, d).isoformat()
+                    except ValueError:
+                        entry_date = None
 
         amount = None
         amount_matches = re.findall(r"([\d,]+)\s*원", msg)
@@ -110,6 +129,7 @@ class FakeLLM:
         item = None
         if intent == "insert":
             patterns = [
+                r"(?:\d{4}-\d{1,2}-\d{1,2})\s+(.+?)\s*([\d,]+)\s*원",
                 r"(?:오늘|어제|그제|엊그제)\s+(.+?)\s*([\d,]+)\s*원",
                 r"(?:today|yesterday)\s+(.+?)\s*(\d[\d,]*)\s*(?:won)?",
                 r"^\s*(.+?)\s*([\d,]+)\s*원",
