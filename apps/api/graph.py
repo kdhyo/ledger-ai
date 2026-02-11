@@ -238,6 +238,22 @@ def format_entries(entries: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def filter_entries_by_item(entries: list[dict], item: Optional[str]) -> list[dict]:
+    if not item:
+        return entries
+
+    needle = re.sub(r"\s+", "", item).lower()
+    if not needle:
+        return entries
+
+    out = []
+    for entry in entries:
+        hay = re.sub(r"\s+", "", str(entry.get("item", ""))).lower()
+        if needle in hay:
+            out.append(entry)
+    return out
+
+
 def build_graph(db_path: Optional[str], llm: OllamaLLM | FakeLLM, prompt: str):
     YES = {"yes", "y", "네", "응", "확인", "진행", "삭제해", "해줘"}
     NO = {"no", "n", "아니", "취소", "안해", "안 할래"}
@@ -368,7 +384,7 @@ def build_graph(db_path: Optional[str], llm: OllamaLLM | FakeLLM, prompt: str):
             if intent.amount is None:
                 return {"reply": "바꿀 금액을 알려주세요.", **cleanup}
 
-            target = intent.target or "last"
+            target = intent.target
             if target == "last":
                 entry = get_last_entry(db_path)
                 if not entry:
@@ -380,7 +396,17 @@ def build_graph(db_path: Optional[str], llm: OllamaLLM | FakeLLM, prompt: str):
 
                 return {"reply": f"수정했어요: {updated['date']} {updated['item']} {updated['amount']}원", **cleanup}
 
-            candidates = list_entries(db_path, entry_date=today_iso(), limit=5)
+            if intent.item or intent.date:
+                candidates = list_entries(db_path, entry_date=intent.date, limit=100)
+                candidates = filter_entries_by_item(candidates, intent.item)
+                if not candidates:
+                    return {"reply": "조건에 맞는 수정 대상이 없어요.", **cleanup}
+            else:
+                entry = get_last_entry(db_path)
+                if not entry:
+                    return {"reply": "최근 내역이 없어요.", **cleanup}
+                candidates = [entry]
+
             if not candidates:
                 return {"reply": "수정할 내역이 없어요.", **cleanup}
             if len(candidates) == 1:
@@ -397,7 +423,7 @@ def build_graph(db_path: Optional[str], llm: OllamaLLM | FakeLLM, prompt: str):
             }
 
         if intent.intent == "delete":
-            target = intent.target or "last"
+            target = intent.target
 
             if target == "last":
                 entry = get_last_entry(db_path)
@@ -412,7 +438,17 @@ def build_graph(db_path: Optional[str], llm: OllamaLLM | FakeLLM, prompt: str):
                     "pending_selection": None,
                 }
 
-            candidates = list_entries(db_path, entry_date=today_iso(), limit=5)
+            if intent.item or intent.date:
+                candidates = list_entries(db_path, entry_date=intent.date, limit=100)
+                candidates = filter_entries_by_item(candidates, intent.item)
+                if not candidates:
+                    return {"reply": "조건에 맞는 삭제 대상이 없어요.", **cleanup}
+            else:
+                entry = get_last_entry(db_path)
+                if not entry:
+                    return {"reply": "삭제할 내역이 없어요.", **cleanup}
+                candidates = [entry]
+
             if not candidates:
                 return {"reply": "삭제할 내역이 없어요.", **cleanup}
             if len(candidates) == 1:

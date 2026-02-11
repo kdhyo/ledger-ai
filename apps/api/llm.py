@@ -77,7 +77,7 @@ class FakeLLM:
         msg_l = msg.lower()
 
         intent = "unknown"
-        if "삭제" in msg or "delete" in msg_l:
+        if "삭제" in msg or "지워" in msg or "delete" in msg_l:
             intent = "delete"
         elif "수정" in msg or "바꿔" in msg or "change" in msg_l or "update" in msg_l:
             intent = "update"
@@ -118,6 +118,20 @@ class FakeLLM:
                 m = re.search(pat, msg, flags=re.I)
                 if m:
                     candidate = m.group(1).strip()
+                    if candidate:
+                        item = candidate
+                        break
+        elif intent in {"update", "delete"}:
+            patterns = [
+                r"[\"'“”‘’]([^\"'“”‘’]+)[\"'“”‘’]\s*(?:아이템)?\s*(?:을|를)?\s*(?:삭제|지워|수정|바꿔|update|delete|change)",
+                r"([가-힣A-Za-z0-9_][가-힣A-Za-z0-9_\s]{0,30})\s*아이템\s*(?:을|를)?\s*(?:삭제|지워|수정|바꿔)",
+                r"(?:삭제|지워|수정|바꿔)\s*해?\s*줘?\s*([가-힣A-Za-z0-9_][가-힣A-Za-z0-9_\s]{0,30})",
+            ]
+            for pat in patterns:
+                m = re.search(pat, msg, flags=re.I)
+                if m:
+                    candidate = m.group(1).strip()
+                    candidate = re.sub(r"^(?:에|의)\s*", "", candidate)
                     if candidate:
                         item = candidate
                         break

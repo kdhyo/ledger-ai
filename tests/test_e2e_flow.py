@@ -39,3 +39,24 @@ def test_e2e_flow(tmp_path):
     body = response.json()
     assert "삭제" in body["reply"]
     assert body["pending_confirm"] is None
+
+
+def test_delete_by_item_does_not_fallback_to_last(tmp_path):
+    db_path = str(tmp_path / "ledger.db")
+    app = create_app(db_path=db_path, use_fake_llm=True)
+    client = TestClient(app)
+
+    response = client.post("/chat", json={"message": "오늘 스타벅스 6500원"})
+    assert response.status_code == 200
+    assert "저장" in response.json()["reply"]
+
+    response = client.post("/chat", json={"message": "오늘 당근 5000원"})
+    assert response.status_code == 200
+    assert "저장" in response.json()["reply"]
+
+    response = client.post("/chat", json={"message": "'에 당근' 아이템 지워줘"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pending_confirm"] is not None
+    assert "당근" in body["reply"]
+    assert "스타벅스" not in body["reply"]
