@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+requests
+langgraph
+pydantic>=2,<3
+pytest
