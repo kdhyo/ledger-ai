@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ledger AI MVP</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="app-header">
+        <div class="brand">Ledger AI MVP</div>
+        <div class="status" id="status">Ready</div>
+      </header>
+
+      <section class="log" id="log"></section>
+
+      <section class="confirm hidden" id="confirm">
+        <div class="confirm-text" id="confirm-text"></div>
+        <div class="confirm-actions">
+          <button class="btn ghost" id="confirm-no" type="button">Cancel</button>
+          <button class="btn primary" id="confirm-yes" type="button">Confirm</button>
+        </div>
+      </section>
+
+      <form class="composer" id="chat-form">
+        <input
+          id="message-input"
+          class="message-input"
+          type="text"
+          placeholder="Type a message"
+          autocomplete="off"
+          required
+        />
+        <button class="btn primary" type="submit">Send</button>
+      </form>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
