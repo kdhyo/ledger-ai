@@ -206,6 +206,10 @@ def extract_intent(message: str, llm: OllamaLLM | FakeLLM, prompt: str) -> Inten
     intent = str(data.get("intent", "unknown")).strip().lower()
     if intent not in {"insert", "select", "update", "delete", "unknown"}:
         intent = "unknown"
+    if intent == "unknown":
+        fallback = minimal_fallback_intent(message)
+        if fallback.intent != "unknown":
+            return fallback
 
     date_value = normalize_relative_date(data.get("date")) if data.get("date") else None
 
@@ -274,16 +278,20 @@ def build_graph(db_path: Optional[str], llm: OllamaLLM | FakeLLM, prompt: str):
             return None
 
         msg = (state.get("message") or "").strip()
+        msg_l = msg.lower()
         candidates = sel.get("candidates", [])
 
-        m = re.search(r"([0-9a-f]{32}|[0-9a-f\-]{36})", msg, re.I)
+        if "취소" in msg or msg_l in {"cancel", "no", "n"}:
+            return {"reply": "선택을 취소했어요.", "pending_selection": None}
+
+        m = re.search(r"(\d+)", msg)
         if not m:
             return {
                 "reply": "수정/삭제할 항목의 id를 보내주세요.\n" + format_entries(candidates),
                 "pending_selection": sel,
             }
 
-        chosen_id = m.group(1)
+        chosen_id = int(m.group(1))
         if not any(c["id"] == chosen_id for c in candidates):
             return {
                 "reply": "후보 목록에 없는 id예요. 다시 골라주세요.\n" + format_entries(candidates),

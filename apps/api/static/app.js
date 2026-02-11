@@ -36,7 +36,7 @@ function renderConfirm(confirm) {
   }
 
   confirmEl.classList.remove("hidden");
-  confirmTextEl.textContent = "Pending confirmation";
+  confirmTextEl.textContent = confirm.prompt || "Pending confirmation";
 }
 
 async function postJson(url, body) {
