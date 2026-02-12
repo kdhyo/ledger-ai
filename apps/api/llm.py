@@ -23,6 +23,27 @@ LEDGER_INTENT_SCHEMA: dict[str, Any] = {
 }
 
 
+def normalize_amount_text(value: str) -> Optional[int]:
+    text = (value or "").strip().lower()
+    if not text:
+        return None
+    text = text.replace(",", "")
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(천|만)?\s*(원)?", text)
+    if match:
+        number = float(match.group(1))
+        unit = match.group(2)
+        scale = 1
+        if unit == "천":
+            scale = 1000
+        elif unit == "만":
+            scale = 10000
+        return int(number * scale)
+    cleaned = re.sub(r"[^0-9]", "", text)
+    if not cleaned:
+        return None
+    return int(cleaned)
+
+
 class OllamaLLM:
     def __init__(
         self,
@@ -85,7 +106,7 @@ class FakeLLM:
             intent = "update"
         elif "내역" in msg or "조회" in msg or "뭐" in msg or "what did i" in msg_l or "list" in msg_l:
             intent = "select"
-        elif re.search(r"([\d,]+)\s*원", msg) or re.search(r"\b\d+\b", msg_l):
+        elif re.search(r"([\d,]+(?:\s*[천만])?)\s*원", msg) or re.search(r"\b\d+\b", msg_l):
             intent = "insert"
 
         target = None
@@ -116,23 +137,32 @@ class FakeLLM:
                         entry_date = date_module(y, mo, d).isoformat()
                     except ValueError:
                         entry_date = None
+            if entry_date is None:
+                m = re.search(r"\b(\d{1,2})\s*일\b(?!\s*전)", msg)
+                if m:
+                    today = date_module.today()
+                    d = int(m.group(1))
+                    try:
+                        entry_date = date_module(today.year, today.month, d).isoformat()
+                    except ValueError:
+                        entry_date = None
 
         amount = None
-        amount_matches = re.findall(r"([\d,]+)\s*원", msg)
+        amount_matches = re.findall(r"([\d,]+(?:\s*[천만])?)\s*원", msg)
         if amount_matches:
-            amount = int(re.sub(r"[^0-9]", "", amount_matches[-1]))
+            amount = normalize_amount_text(amount_matches[-1])
         else:
             num_matches = re.findall(r"\b\d[\d,]*\b", msg)
             if num_matches:
-                amount = int(re.sub(r"[^0-9]", "", num_matches[-1]))
+                amount = normalize_amount_text(num_matches[-1])
 
         item = None
         if intent == "insert":
             patterns = [
-                r"(?:\d{4}-\d{1,2}-\d{1,2})\s+(.+?)\s*([\d,]+)\s*원",
-                r"(?:오늘|어제|그제|엊그제)\s+(.+?)\s*([\d,]+)\s*원",
+                r"(?:\d{4}-\d{1,2}-\d{1,2})\s+(.+?)\s*([\d,]+(?:\s*[천만])?)\s*원",
+                r"(?:오늘|어제|그제|엊그제)\s+(.+?)\s*([\d,]+(?:\s*[천만])?)\s*원",
                 r"(?:today|yesterday)\s+(.+?)\s*(\d[\d,]*)\s*(?:won)?",
-                r"^\s*(.+?)\s*([\d,]+)\s*원",
+                r"^\s*(.+?)\s*([\d,]+(?:\s*[천만])?)\s*원",
             ]
             for pat in patterns:
                 m = re.search(pat, msg, flags=re.I)

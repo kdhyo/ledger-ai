@@ -104,6 +104,17 @@ def normalize_relative_date(text: Optional[str]) -> Optional[str]:
         except ValueError:
             return None
 
+    m = re.fullmatch(r"(\d{1,2})\s*일", value)
+    if m:
+        today = date_module.today()
+        year = today.year
+        month = today.month
+        day = int(m.group(1))
+        try:
+            return date_module(year, month, day).isoformat()
+        except ValueError:
+            return None
+
     m = re.fullmatch(r"(\d{2,4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일", value)
     if m:
         year_raw = int(m.group(1))
@@ -124,10 +135,7 @@ def normalize_amount(value) -> Optional[int]:
     cleaned = re.sub(r"[^0-9]", "", str(value))
     if not cleaned:
         return None
-    try:
-        return int(cleaned)
-    except ValueError:
-        return None
+    return int(cleaned)
 
 
 def is_item_substring(message: str, item: Optional[str]) -> bool:
@@ -165,6 +173,7 @@ def minimal_fallback_intent(message: str) -> Intent:
         r"\d{4}-\d{1,2}-\d{1,2}",
         r"\d{2,4}\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일",
         r"\d{1,2}\s*월\s*\d{1,2}\s*일",
+        r"\d{1,2}\s*일(?!\s*전)",
         r"\d+\s*일\s*전",
         r"\d+\s*days?\s*ago",
     ]
@@ -246,6 +255,60 @@ def filter_entries_by_item(entries: list[dict], item: Optional[str]) -> list[dic
         if needle in hay:
             out.append(entry)
     return out
+
+
+def extract_date_from_message(message: str) -> Optional[str]:
+    msg = message or ""
+    date_patterns = [
+        r"\d{4}-\d{1,2}-\d{1,2}",
+        r"\d{2,4}\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일",
+        r"\d{1,2}\s*월\s*\d{1,2}\s*일",
+        r"\d{1,2}\s*일(?!\s*전)",
+        r"\d+\s*일\s*전",
+        r"\d+\s*days?\s*ago",
+    ]
+    for pat in date_patterns:
+        m_date = re.search(pat, msg, re.I)
+        if m_date:
+            normalized = normalize_relative_date(m_date.group(0))
+            if normalized:
+                return normalized
+    msg_l = msg.lower()
+    if "오늘" in msg or "today" in msg_l:
+        return today_iso()
+    if "어제" in msg or "yesterday" in msg_l:
+        return (date_module.today() - timedelta(days=1)).isoformat()
+    return None
+
+
+def extract_bulk_insert_candidates(
+    message: str,
+    entry_date: Optional[str],
+    llm: OllamaLLM | FakeLLM,
+    prompt: str,
+) -> list[dict]:
+    msg = message or ""
+    if "원" not in msg or "," not in msg:
+        return []
+
+    default_date = extract_date_from_message(msg) or entry_date or today_iso()
+    candidates = []
+    segments = [segment.strip() for segment in re.split(r"\s*,\s*", msg) if segment.strip()]
+    if len(segments) < 2:
+        return []
+
+    for segment in segments:
+        parsed = extract_intent(segment, llm, prompt)
+        if parsed.intent != "insert" or not parsed.item or parsed.amount is None:
+            continue
+        candidates.append(
+            {
+                "date": parsed.date or default_date,
+                "item": parsed.item,
+                "amount": parsed.amount,
+            }
+        )
+    return candidates
 
 
 def build_graph(db_path: Optional[str], llm: OllamaLLM | FakeLLM, prompt: str):
@@ -374,9 +437,23 @@ def build_graph(db_path: Optional[str], llm: OllamaLLM | FakeLLM, prompt: str):
         return "unknown"
 
     def run_insert_node(state: ChatState) -> ChatState:
+        message = state.get("message", "")
         amount = state.get("intent_amount")
         item = state.get("intent_item")
-        entry_date = state.get("intent_date") or today_iso()
+        entry_date = state.get("intent_date") or extract_date_from_message(message) or today_iso()
+        prompt_with_today = prompt.replace("{today}", today_iso())
+        candidates = extract_bulk_insert_candidates(message, entry_date, llm, prompt_with_today)
+
+        if len(candidates) >= 2:
+            saved = [insert_entry(db_path, c["date"], c["item"], c["amount"]) for c in candidates]
+            lines = [f"{entry['date']} {entry['item']} {entry['amount']}원" for entry in saved]
+            return {"reply": f"{len(saved)}건 저장했어요.\n" + "\n".join(lines), **cleanup()}
+
+        if len(candidates) == 1 and (amount is None or not item):
+            amount = candidates[0]["amount"]
+            item = candidates[0]["item"]
+            entry_date = candidates[0]["date"]
+
         if amount is None:
             return {"reply": "금액을 알려주세요.", **cleanup()}
         if not item:

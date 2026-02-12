@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date as date_module
+
 from fastapi.testclient import TestClient
 
 from apps.api.main import create_app
@@ -80,3 +82,26 @@ def test_sum_by_date(tmp_path):
     body = response.json()
     assert "2026-02-10" in body["reply"]
     assert "35000" in body["reply"]
+
+
+def test_insert_multiple_entries_in_one_message(tmp_path):
+    db_path = str(tmp_path / "ledger.db")
+    app = create_app(db_path=db_path, use_fake_llm=True)
+    client = TestClient(app)
+
+    response = client.post("/chat", json={"message": "오늘 당근 4000원, 양상추 3천원 샀어"})
+    assert response.status_code == 200
+    body = response.json()
+    assert "2건 저장" in body["reply"]
+    assert "당근 4000원" in body["reply"]
+    assert "양상추 3000원" in body["reply"]
+
+    today = date_module.today().isoformat()
+    response = client.post("/chat", json={"message": "오늘 내역 보여줘"})
+    assert response.status_code == 200
+    body = response.json()
+    assert today in body["reply"]
+    assert "당근" in body["reply"]
+    assert "4000" in body["reply"]
+    assert "양상추" in body["reply"]
+    assert "3000" in body["reply"]

@@ -17,6 +17,7 @@ Rules:
 - Convert relative dates (today/yesterday/2 days ago, 오늘/어제/그제/엊그제) into ISO date using Today's date.
 - Never output "today" or "yesterday" as date. Always output an ISO date "YYYY-MM-DD" or null.
 - amount must be an integer number of KRW (remove commas and remove the "원" unit).
+- Convert Korean unit amounts into integer KRW: "3천원" -> 3000, "2만원" -> 20000.
 
 - item MUST be copied from the user's message (a contiguous substring). Do NOT invent, translate, or paraphrase the item.
 - Keep item in the same language/script as the user's message.
