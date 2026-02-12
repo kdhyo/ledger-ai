@@ -13,13 +13,13 @@ pip install -r requirements.txt
 
 ## Ollama 설정
 ```bash
-ollama pull bnksys/yanolja-eeve-korean-instruct-10.8b
+ollama pull qwen2.5:7b
 ollama serve
 ```
 
 선택 환경변수:
 ```bash
-export OLLAMA_MODEL=bnksys/yanolja-eeve-korean-instruct-10.8b
+export OLLAMA_MODEL=qwen2.5:7b
 export OLLAMA_BASE_URL=http://localhost:11434
 export OLLAMA_TEMPERATURE=0.0
 export OLLAMA_TOP_P=0.2
@@ -27,26 +27,50 @@ export OLLAMA_SEED=42
 ```
 
 ## 실행
+터미널 1 (MCP 서버):
 ```bash
-uvicorn apps.api.main:app --reload
+PYTHONPATH=. .venv/bin/python -m server.main
+```
+
+터미널 2 (클라이언트 API):
+```bash
+PYTHONPATH=. MCP_CLIENT_MODE=remote MCP_SERVER_BASE_URL=http://localhost:8100/mcp .venv/bin/uvicorn client.main:app --reload --port 8000
 ```
 
 접속: http://localhost:8000
 
+로컬 임베디드 MCP 모드(서버 별도 실행 없이):
+```bash
+PYTHONPATH=. MCP_CLIENT_MODE=local .venv/bin/uvicorn client.main:app --reload --port 8000
+```
+
 ## 테스트
 ```bash
-USE_FAKE_LLM=1 python -m pytest -q
+PYTHONPATH=. USE_FAKE_LLM=1 .venv/bin/pytest -q
 ```
 
 ## 참고
 - SQLite DB 파일 기본 경로는 저장소 루트의 `ledger.db`입니다.
 - LLM은 의도(intent) 추출에만 사용합니다.
-- SQL 실행은 `apps/api/tools/ledger_tools.py`에서만 수행합니다.
+- SQL 실행은 MCP 툴 핸들러(`server/mcp/handlers.py`)에서 수행합니다.
 - `USE_FAKE_LLM=1` 설정 시 Ollama 없이도 결정론적 테스트가 가능합니다.
 - 지원 의도: `insert`, `select`, `update`, `delete`, `sum`, `unknown`
+- 기본 MCP 모드는 `local`이며, 분리 실행 시 `MCP_CLIENT_MODE=remote`를 사용합니다.
+- MCP 설정 파일 예시는 루트의 `mcp_config.json`을 참고하세요.
+
+## 디렉토리 개요
+- `client/`: 사용자 API, LangGraph 오케스트레이션, MCP 클라이언트
+- `server/`: FastMCP 서버, DB 툴 핸들러, MCP 리소스/프롬프트
+- `shared/`: client/server 공통 유틸 및 MCP 계약 모델
+- `tests/`: e2e + resilience + MCP 계약 테스트
+
+## 로그 확인 포인트
+- 클라이언트 호출 로그: `client.main`, `client.mcp.remote_client`
+- 서버 호출 로그: `server.main`, `server.mcp.handlers`
+- FastMCP 세션 로그: `mcp.server.*`
 
 ## 현재 LangGraph 구조
-애플리케이션은 `apps/api/graph.py`에서 멀티 노드 상태 머신으로 동작합니다.
+애플리케이션은 `client/graph.py`에서 멀티 노드 상태 머신으로 동작합니다.
 
 ### 상태 키
 - `message`

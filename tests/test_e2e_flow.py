@@ -4,7 +4,7 @@ from datetime import date as date_module
 
 from fastapi.testclient import TestClient
 
-from apps.api.main import create_app
+from client.main import create_app
 
 
 def test_e2e_flow(tmp_path):
@@ -105,3 +105,30 @@ def test_insert_multiple_entries_in_one_message(tmp_path):
     assert "4000" in body["reply"]
     assert "양상추" in body["reply"]
     assert "3000" in body["reply"]
+
+
+def test_pending_state_is_isolated_by_session(tmp_path):
+    db_path = str(tmp_path / "ledger.db")
+    app = create_app(db_path=db_path, use_fake_llm=True)
+    client = TestClient(app)
+
+    session_a = "session-a"
+    session_b = "session-b"
+
+    response = client.post("/chat", json={"message": "오늘 커피 5000원", "session_id": session_a})
+    assert response.status_code == 200
+    assert "저장" in response.json()["reply"]
+
+    response = client.post("/chat", json={"message": "그거 삭제해줘", "session_id": session_a})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pending_confirm"] is not None
+    token_a = body["pending_confirm"]["token"]
+
+    response = client.post("/confirm", json={"token": token_a, "decision": "yes", "session_id": session_b})
+    assert response.status_code == 200
+    assert "확인할 항목이 없어요" in response.json()["reply"]
+
+    response = client.post("/confirm", json={"token": token_a, "decision": "yes", "session_id": session_a})
+    assert response.status_code == 200
+    assert "삭제" in response.json()["reply"]
