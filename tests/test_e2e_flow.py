@@ -5,12 +5,38 @@ from datetime import date as date_module
 from fastapi.testclient import TestClient
 
 from client.main import create_app
+from server.mcp.handlers import LedgerMCPServer
 
 
-def test_e2e_flow(tmp_path):
-    db_path = str(tmp_path / "ledger.db")
+class _TestMCPClient:
+    def __init__(self, db_path: str) -> None:
+        self._server = LedgerMCPServer(default_db_path=db_path)
+
+    def get_read_tool_schemas(self) -> list[dict]:
+        return self._server.get_read_tool_schemas()
+
+    def get_read_resource_context(self, entry_date, limit: int = 5) -> str:
+        return self.invoke(
+            "get_read_resource_context",
+            {"entry_date": entry_date, "limit": limit},
+        )
+
+    def invoke(self, name: str, arguments):
+        return self._server.execute(name, arguments, db_path=None)
+
+
+def _create_test_client(db_path: str, monkeypatch) -> TestClient:
+    monkeypatch.setattr(
+        "client.graph_nodes.build_mcp_client",
+        lambda **kwargs: _TestMCPClient(kwargs.get("db_path") or db_path),
+    )
     app = create_app(db_path=db_path, use_fake_llm=True)
-    client = TestClient(app)
+    return TestClient(app)
+
+
+def test_e2e_flow(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "ledger.db")
+    client = _create_test_client(db_path, monkeypatch)
 
     response = client.post("/chat", json={"message": "오늘 스타벅스 6500원"})
     assert response.status_code == 200
@@ -43,10 +69,9 @@ def test_e2e_flow(tmp_path):
     assert body["pending_confirm"] is None
 
 
-def test_delete_by_item_does_not_fallback_to_last(tmp_path):
+def test_delete_by_item_does_not_fallback_to_last(tmp_path, monkeypatch):
     db_path = str(tmp_path / "ledger.db")
-    app = create_app(db_path=db_path, use_fake_llm=True)
-    client = TestClient(app)
+    client = _create_test_client(db_path, monkeypatch)
 
     response = client.post("/chat", json={"message": "오늘 스타벅스 6500원"})
     assert response.status_code == 200
@@ -64,10 +89,9 @@ def test_delete_by_item_does_not_fallback_to_last(tmp_path):
     assert "스타벅스" not in body["reply"]
 
 
-def test_sum_by_date(tmp_path):
+def test_sum_by_date(tmp_path, monkeypatch):
     db_path = str(tmp_path / "ledger.db")
-    app = create_app(db_path=db_path, use_fake_llm=True)
-    client = TestClient(app)
+    client = _create_test_client(db_path, monkeypatch)
 
     response = client.post("/chat", json={"message": "2026-02-10 애플스토어 30000원"})
     assert response.status_code == 200
@@ -84,10 +108,9 @@ def test_sum_by_date(tmp_path):
     assert "35000" in body["reply"]
 
 
-def test_insert_multiple_entries_in_one_message(tmp_path):
+def test_insert_multiple_entries_in_one_message(tmp_path, monkeypatch):
     db_path = str(tmp_path / "ledger.db")
-    app = create_app(db_path=db_path, use_fake_llm=True)
-    client = TestClient(app)
+    client = _create_test_client(db_path, monkeypatch)
 
     response = client.post("/chat", json={"message": "오늘 당근 4000원, 양상추 3천원 샀어"})
     assert response.status_code == 200
@@ -107,10 +130,9 @@ def test_insert_multiple_entries_in_one_message(tmp_path):
     assert "3000" in body["reply"]
 
 
-def test_pending_state_is_isolated_by_session(tmp_path):
+def test_pending_state_is_isolated_by_session(tmp_path, monkeypatch):
     db_path = str(tmp_path / "ledger.db")
-    app = create_app(db_path=db_path, use_fake_llm=True)
-    client = TestClient(app)
+    client = _create_test_client(db_path, monkeypatch)
 
     session_a = "session-a"
     session_b = "session-b"
