@@ -56,3 +56,9 @@ def test_read_tool_input_schema_contains_known_fields():
 
     sum_schema = read_tool_input_schema("sum_ledger_entries")
     assert "entry_date" in sum_schema["properties"]
+
+
+def test_mcp_server_execute_raises_for_unsupported_tool():
+    server = LedgerMCPServer()
+    with pytest.raises(ValueError):
+        server.execute("unsupported_tool", {}, db_path=None)
