@@ -9,6 +9,17 @@ const confirmNoEl = document.getElementById("confirm-no");
 
 let pendingConfirm = null;
 let isComposing = false;
+const SESSION_STORAGE_KEY = "ledger-ai-session-id";
+
+function getSessionId() {
+  const existing = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  if (existing) {
+    return existing;
+  }
+  const generated = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  window.localStorage.setItem(SESSION_STORAGE_KEY, generated);
+  return generated;
+}
 
 function addMessage(role, text) {
   const row = document.createElement("div");
@@ -56,7 +67,7 @@ async function sendMessage(text) {
   addMessage("user", text);
 
   try {
-    const data = await postJson("/chat", { message: text });
+    const data = await postJson("/chat", { message: text, session_id: getSessionId() });
     addMessage("assistant", data.reply || "");
     renderConfirm(data.pending_confirm);
   } catch (error) {
@@ -75,6 +86,7 @@ async function confirmAction(decision) {
     const data = await postJson("/confirm", {
       token: pendingConfirm.token,
       decision,
+      session_id: getSessionId(),
     });
     addMessage("assistant", data.reply || "");
     renderConfirm(data.pending_confirm);

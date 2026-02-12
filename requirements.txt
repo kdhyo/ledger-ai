@@ -2,5 +2,7 @@ fastapi
 uvicorn
 requests
 langgraph
+langchain-core
+fastmcp
 pydantic>=2,<3
 pytest

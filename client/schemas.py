@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
     message: str
+    session_id: Optional[str] = None
 
 
 class PendingConfirm(BaseModel):
@@ -22,3 +23,4 @@ class ChatResponse(BaseModel):
 class ConfirmRequest(BaseModel):
     token: str
     decision: Literal["yes", "no"]
+    session_id: Optional[str] = None

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import closing
-from datetime import date as date_module
 from typing import List, Optional
 
 from ..db.session import get_connection, init_db
@@ -118,7 +117,3 @@ def delete_entry(db_path: Optional[str], entry_id: int) -> bool:
         )
         connection.commit()
         return cursor.rowcount > 0
-
-
-def today_iso() -> str:
-    return date_module.today().isoformat()

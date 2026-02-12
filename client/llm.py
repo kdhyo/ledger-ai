@@ -91,6 +91,37 @@ class OllamaLLM:
         data = response.json()
         return data["message"]["content"]
 
+    def chat_with_tools(self, system_prompt: str, user_message: str, tools: list[dict]) -> dict:
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            "tools": tools,
+            "stream": False,
+            "options": {
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+            },
+        }
+        if self.seed is not None:
+            payload["options"]["seed"] = self.seed
+
+        response = requests.post(
+            f"{self.base_url}/api/chat",
+            json=payload,
+            timeout=30,
+        )
+        if not response.ok:
+            body_preview = (response.text or "")[:500]
+            raise RuntimeError(
+                f"Ollama tool call failed: HTTP {response.status_code}, body={body_preview}"
+            )
+        data = response.json()
+        message = data.get("message")
+        return message if isinstance(message, dict) else {}
+
 
 class FakeLLM:
     def chat(self, system_prompt: str, user_message: str) -> str:
@@ -196,12 +227,32 @@ class FakeLLM:
             }
         )
 
+    def chat_with_tools(self, system_prompt: str, user_message: str, tools: list[dict]) -> dict:
+        msg = (user_message or "").lower()
+        if any(k in msg for k in ["sum", "total", "총합", "합계"]):
+            return {
+                "tool_calls": [
+                    {"function": {"name": "sum_ledger_entries", "arguments": {}}},
+                ]
+            }
+        if any(k in msg for k in ["last", "최근", "마지막"]):
+            return {
+                "tool_calls": [
+                    {"function": {"name": "get_last_ledger_entry", "arguments": {}}},
+                ]
+            }
+        return {
+            "tool_calls": [
+                {"function": {"name": "list_ledger_entries", "arguments": {"limit": 10}}},
+            ]
+        }
+
 
 def get_llm(use_fake: bool = False) -> OllamaLLM | FakeLLM:
     if use_fake or os.getenv("USE_FAKE_LLM") == "1":
         return FakeLLM()
 
-    model = os.getenv("OLLAMA_MODEL", "bnksys/yanolja-eeve-korean-instruct-10.8b")
+    model = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
     base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
     temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.0"))
